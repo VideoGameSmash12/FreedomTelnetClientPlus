@@ -1,9 +1,9 @@
-/* 
- * Copyright (C) 2012-2017 Steven Lawson
+/*
+ * Copyright (C) 2022 Video
  *
- * This file is part of FreedomTelnetClient.
+ * This file is part of FreedomTelnetClient+.
  *
- * FreedomTelnetClient is free software: you can redistribute it and/or modify
+ * FreedomTelnetClient+ is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -16,13 +16,29 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package me.StevenLawson.BukkitTelnetClient;
+package me.videogamesm12.freedomtelnetclientplus.data;
 
-import java.lang.annotation.*;
+import lombok.Data;
 
-@Retention(value = RetentionPolicy.RUNTIME)
-@Target(value = ElementType.METHOD)
-public @interface ParameterGetter
+import java.awt.*;
+
+@Data
+public class Message
 {
-    public String name();
+    private String message;
+
+    private Color color = Color.GRAY;
+
+    public Message(String message, boolean fromFTCP)
+    {
+        if (fromFTCP)
+            message = "[FTC+] " + message;
+
+        this.message = message;
+    }
+
+    public Message(String message)
+    {
+        this(message, false);
+    }
 }

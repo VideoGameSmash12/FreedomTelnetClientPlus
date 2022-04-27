@@ -1,5 +1,6 @@
-/* 
+/*
  * Copyright (C) 2012-2017 Steven Lawson
+ * Copyright (C) 2021-2022 Video
  *
  * This file is part of FreedomTelnetClient.
  *
@@ -18,20 +19,23 @@
  */
 package me.StevenLawson.BukkitTelnetClient;
 
-import java.awt.Color;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.swing.Timer;
+import me.videogamesm12.freedomtelnetclientplus.config.Config;
+import me.videogamesm12.freedomtelnetclientplus.data.Enhancements;
+import me.videogamesm12.freedomtelnetclientplus.data.Message;
+import me.videogamesm12.freedomtelnetclientplus.data.Server;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.net.telnet.TelnetClient;
 
 public class BTC_ConnectionManager
 {
-    private static final Pattern LOGIN_MESSAGE = Pattern.compile("\\[.+?@BukkitTelnet\\]\\$ Logged in as (.+)\\.");
+    private static final Pattern LOGIN_MESSAGE = Pattern.compile("\\[.+?@BukkitTelnet]\\$ Logged in as (.+)\\.");
 
     private final TelnetClient telnetClient = new TelnetClient();
     private Thread connectThread;
@@ -48,11 +52,10 @@ public class BTC_ConnectionManager
     {
         final BTC_MainPanel btc = BukkitTelnetClient.mainPanel;
 
-        btc.getBtnConnect().setEnabled(false);
+        btc.getBtnConnect().setText("Disconnect");
         btc.getTxtServer().setEnabled(false);
-        btc.getBtnDisconnect().setEnabled(true);
 
-        btc.writeToConsole(new BTC_ConsoleMessage("Connecting to " + hostname + ":" + port + "...", Color.RED));
+        btc.writeToConsole(new Message(String.format("Connecting to %s:%s...", hostname, port), true));
 
         this.hostname = hostname;
         this.port = port;
@@ -78,7 +81,7 @@ public class BTC_ConnectionManager
             {
                 _port = Integer.parseInt(parts[1]);
             }
-            catch (NumberFormatException ex)
+            catch (NumberFormatException ignored)
             {
             }
 
@@ -107,17 +110,18 @@ public class BTC_ConnectionManager
     {
         final BTC_MainPanel btc = BukkitTelnetClient.mainPanel;
 
-        btc.getBtnConnect().setEnabled(true);
+        btc.getBtnConnect().setText("Connect");
         btc.getTxtServer().setEnabled(true);
-        btc.getBtnDisconnect().setEnabled(false);
         btc.getBtnSend().setEnabled(false);
         btc.getTxtCommand().setEnabled(false);
 
         loginName = null;
 
+        btc.updateTPSCounter(null);
+        btc.getTxtNumPlayers().setText("Not connected");
         updateTitle(false);
 
-        btc.writeToConsole(new BTC_ConsoleMessage("Disconnected.", Color.RED));
+        btc.writeToConsole(new Message("Disconnected.", true));
     }
 
     public void sendCommand(final String text)
@@ -125,13 +129,66 @@ public class BTC_ConnectionManager
         sendCommand(text, true);
     }
 
-    public void sendCommand(final String text, final boolean verbose)
+    public void sendCommand(String text, final boolean verbose)
     {
+        if (text.length() > 32767)
+        {
+            text = text.substring(0, 32766);
+            BukkitTelnetClient.mainPanel.writeToConsole(new Message("Your command was shortened because it was too long to send.", true));
+        }
+        
+        if (text.startsWith("ftcp."))
+        {
+            String[] commands = text.split("\\.");
+            String[] args = text.split(" ");
+            switch(commands[1].toLowerCase())
+            {
+                case "disconnect":
+                {
+                    triggerDisconnect();
+                    return;
+                }
+                
+                case "save":
+                {
+                    BukkitTelnetClient.mainPanel.writeToConsole(new Message("Attempting to save the current configuration to disk...", true));
+                    try
+                    {
+                        Config.save();
+                        BukkitTelnetClient.mainPanel.writeToConsole(new Message("Configuration saved.", true));
+                    }
+                    catch (Exception ex)
+                    {
+                        BukkitTelnetClient.mainPanel.writeToConsole(new Message("Failed to save the configuration.", true));
+                        ex.printStackTrace();
+                    }
+                    return;
+                }
+                
+                case "servers":
+                {
+                    BukkitTelnetClient.mainPanel.writeToConsole(new Message("-- Server List --", true));
+                    for (Server server : Config.instance.getServers())
+                    {
+                        BukkitTelnetClient.mainPanel.writeToConsole(new Message(server.toString(), true));
+                    }
+                    BukkitTelnetClient.mainPanel.writeToConsole(new Message("-----------------", true));
+                    return;
+                }
+                
+                default:
+                {
+                    BukkitTelnetClient.mainPanel.writeToConsole(new Message("Unknown command. Type 'ftcp.help' for a list of commands.", true));
+                    return;
+                }
+            }
+        }
+        
         try
         {
             if (verbose)
             {
-                BukkitTelnetClient.mainPanel.writeToConsole(new BTC_ConsoleMessage(":" + text));
+                BukkitTelnetClient.mainPanel.writeToConsole(new Message("> " + text));
             }
 
             final OutputStream out = this.telnetClient.getOutputStream();
@@ -190,25 +247,28 @@ public class BTC_ConnectionManager
                         {
                             BTC_ConnectionManager.this.loginName = _loginName;
                             updateTitle(true);
-                            sendDelayedCommand("telnet.enhanced", false, 100);
+                            btc.getTxtNumPlayers().setText("Connected - Waiting for data");
+                            
+                            if (Config.instance.getPreferences().isAutoEnhanced())
+                            {
+                                sendDelayedCommand("telnet.enhanced", false, 100);
+                            }
+                            
+                            if (Config.instance.getPreferences().isAutoEnhancedPlus())
+                            {
+                                sendDelayedCommand("telnet.enhancedplus", false, 100);
+                            }
                         }
                         else
                         {
-                            final PlayerInfo selectedPlayer = btc.getSelectedPlayer();
-                            String selectedPlayerName = null;
-                            if (selectedPlayer != null)
+                            if (Enhancements.isDataset(line))
                             {
-                                selectedPlayerName = selectedPlayer.getName();
-                            }
-
-                            if (BTC_PlayerListDecoder.checkForPlayerListMessage(line, btc.getPlayerList()))
-                            {
-                                btc.updatePlayerList(selectedPlayerName);
+                                Enhancements.processDataset(line);
                             }
                             else
                             {
-                                final BTC_TelnetMessage message = new BTC_TelnetMessage(line);
-                                if (!message.skip())
+                                final Message message = new Message(line);
+                                if (message.toString() != null)
                                 {
                                     btc.writeToConsole(message);
                                 }
@@ -221,7 +281,7 @@ public class BTC_ConnectionManager
             }
             catch (IOException ex)
             {
-                btc.writeToConsole(new BTC_ConsoleMessage(ex.getMessage() + System.lineSeparator() + ExceptionUtils.getStackTrace(ex)));
+                btc.writeToConsole(new Message(ex.getMessage() + System.lineSeparator() + ExceptionUtils.getStackTrace(ex)));
             }
 
             finishDisconnect();
@@ -231,7 +291,12 @@ public class BTC_ConnectionManager
         this.connectThread.start();
     }
 
-    public static final String checkForLoginMessage(String message)
+    public final boolean isConnected()
+    {
+        return this.telnetClient.isConnected();
+    }
+    
+    public static String checkForLoginMessage(String message)
     {
         final Matcher matcher = LOGIN_MESSAGE.matcher(message);
         if (matcher.find())
@@ -256,16 +321,16 @@ public class BTC_ConnectionManager
         {
             if (loginName == null)
             {
-                title = String.format("FreedomTelnetClient - %s - %s:%d", BukkitTelnetClient.VERSION_STRING, hostname, port);
+                title = String.format("FreedomTelnetClient+ - %s - %s:%d", BukkitTelnetClient.VERSION_STRING, hostname, port);
             }
             else
             {
-                title = String.format("FreedomTelnetClient - %s - %s@%s:%d", BukkitTelnetClient.VERSION_STRING, loginName, hostname, port);
+                title = String.format("FreedomTelnetClient+ - %s - %s@%s:%d", BukkitTelnetClient.VERSION_STRING, loginName, hostname, port);
             }
         }
         else
         {
-            title = String.format("FreedomTelnetClient - %s - Disconnected", BukkitTelnetClient.VERSION_STRING);
+            title = String.format("FreedomTelnetClient+ - %s - Disconnected", BukkitTelnetClient.VERSION_STRING);
         }
 
         mainPanel.setTitle(title);

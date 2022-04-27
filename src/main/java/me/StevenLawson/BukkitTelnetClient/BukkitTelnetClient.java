@@ -1,5 +1,6 @@
-/* 
+/*
  * Copyright (C) 2012-2017 Steven Lawson
+ * Copyright (C) 2021-2022 Video
  *
  * This file is part of FreedomTelnetClient.
  *
@@ -19,26 +20,24 @@
 package me.StevenLawson.BukkitTelnetClient;
 
 import java.io.InputStream;
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
+import me.videogamesm12.freedomtelnetclientplus.config.Config;
+import me.videogamesm12.freedomtelnetclientplus.data.Theme;
 
 public class BukkitTelnetClient
 {
     public static final String VERSION_STRING = getVersionString();
+    public static final String[] DEVELOPERS = {"videogamesm12", "StevenLawson"};
     public static final Logger LOGGER = Logger.getLogger(BukkitTelnetClient.class.getName());
     public static BTC_MainPanel mainPanel = null;
-    public static BTC_ConfigLoader config = new BTC_ConfigLoader();
 
-    public static void main(String args[])
+    public static void main(String[] args)
     {
-        config.load(true);
-
-        findAndSetLookAndFeel("Windows");
-
+        changeTheme(Config.instance.getPreferences().getCurrentTheme(), false);
+        
         SwingUtilities.invokeLater(() ->
         {
             mainPanel = new BTC_MainPanel();
@@ -46,7 +45,29 @@ public class BukkitTelnetClient
         });
     }
 
-    private static void findAndSetLookAndFeel(final String searchStyleName)
+    public static void changeTheme(Theme theme, boolean update)
+    {
+        if (theme != null)
+        {
+            theme.apply();
+            Config.instance.getPreferences().setCurrentTheme(theme);
+            Config.save();
+        }
+        else
+        {
+            // Fallback, in case something isn't right
+            findAndSetLookAndFeel("Windows");
+        }
+
+        if (update)
+        {
+            SwingUtilities.updateComponentTreeUI(mainPanel);
+            mainPanel.pack();
+            mainPanel.sizeManagement();
+        }
+    }
+    
+    public static void findAndSetLookAndFeel(final String searchStyleName)
     {
         try
         {
@@ -81,25 +102,6 @@ public class BukkitTelnetClient
         }
     }
 
-    // JDK 7 safe getDeclaredAnnotation
-    public static <T extends Annotation> T getDeclaredAnnotation(final Method method, final Class<T> annotationClass)
-    {
-        java.util.Objects.requireNonNull(annotationClass);
-
-        T annotation = null;
-
-        for (final Annotation _annotation : method.getDeclaredAnnotations())
-        {
-            if (_annotation.annotationType() == annotationClass)
-            {
-                annotation = annotationClass.cast(_annotation);
-                break;
-            }
-        }
-
-        return annotation;
-    }
-
     public static String getVersionString()
     {
         try (final InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("my.properties"))
@@ -113,5 +115,26 @@ public class BukkitTelnetClient
             LOGGER.log(Level.SEVERE, null, ex);
         }
         return "Unknown";
+    }
+    
+    public static String getBuildDate()
+    {
+        try (final InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("my.properties"))
+        {
+            final Properties properties = new Properties();
+            properties.load(inputStream);
+            return properties.getProperty("timestampDate");
+        }
+        catch (Exception ex)
+        {
+            LOGGER.log(Level.SEVERE, null, ex);
+        }
+        return "Unknown";
+    }
+    
+    public static void quit()
+    {
+        Config.save();
+        System.exit(0);
     }
 }
